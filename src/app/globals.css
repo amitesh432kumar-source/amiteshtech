@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/* Amitesh Tech design tokens.
+   Class-based dark mode so the theme toggle wins over the OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --surface: #ffffff;
+  --surface-muted: #f6f7fb;
+  --foreground: #0d1117;
+  --muted: #5b6472;
+  --border: #e4e7ee;
+
+  --brand: #4f46e5;
+  --brand-strong: #4338ca;
+  --brand-soft: #eef2ff;
+  --accent: #06b6d4;
+
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
+
+  --ring: #6366f1;
+}
+
+.dark {
+  --background: #080b12;
+  --surface: #10141d;
+  --surface-muted: #161b27;
+  --foreground: #e9edf5;
+  --muted: #9aa4b6;
+  --border: #232a38;
+
+  --brand: #818cf8;
+  --brand-strong: #a5b4fc;
+  --brand-soft: #1b2036;
+  --accent: #22d3ee;
+
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+
+  --ring: #818cf8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-card: 1rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+}
+
+@layer utilities {
+  .container-page {
+    width: 100%;
+    margin-inline: auto;
+    max-width: 80rem;
+    padding-inline: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .container-page { padding-inline: 1.5rem; }
+  }
+
+  .hero-glow {
+    background:
+      radial-gradient(60% 55% at 15% 10%, color-mix(in oklab, var(--brand) 22%, transparent), transparent 70%),
+      radial-gradient(50% 50% at 85% 0%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%);
+  }
+
+  .grid-lines {
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(70% 60% at 50% 0%, #000, transparent 75%);
+  }
+
+  .marquee-track {
+    animation: marquee 28s linear infinite;
+  }
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
