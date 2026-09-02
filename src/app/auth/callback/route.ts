@@ -23,6 +23,13 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
+    // The user only ever sees a generic message — this is what actually
+    // failed, needed to tell a genuine problem apart from a stale/reused link.
+    console.error("exchangeCodeForSession failed", {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+    });
     return NextResponse.redirect(`${origin}/login?error=invalid_link`);
   }
 
