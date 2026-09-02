@@ -7,11 +7,28 @@ const publicSchema = z.object({
 });
 
 // Referenced by their full names so Next.js can inline them at build time.
-export const publicEnv = publicSchema.parse({
+const parsedPublicEnv = publicSchema.safeParse({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
 });
+
+if (!parsedPublicEnv.success) {
+  // A missing variable here fails the build. Say which one and how to fix it,
+  // rather than surfacing a raw schema error from deep in the stack.
+  const problems = parsedPublicEnv.error.issues
+    .map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
+    .join("\n");
+
+  throw new Error(
+    `Missing or invalid environment variables:\n${problems}\n\n` +
+      "Set these in your hosting provider's environment variables (for Vercel: " +
+      "Project Settings -> Environment Variables, enabled for Production, Preview " +
+      "and Development), then redeploy. Locally they belong in .env.local.",
+  );
+}
+
+export const publicEnv = parsedPublicEnv.data;
 
 export function serviceRoleKey() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
