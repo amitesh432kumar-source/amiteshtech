@@ -11,11 +11,24 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const next = searchParams.get("next");
   const type = searchParams.get("type");
+  const userAgent = request.headers.get("user-agent") ?? "unknown";
+
+  // Temporary — tracking down a mobile-only sign-in failure. Fires on every
+  // hit regardless of outcome, so we can tell "never reached" apart from
+  // "reached and failed" apart from "reached and succeeded but the session
+  // didn't stick".
+  console.log("auth/callback hit", {
+    hasCode: Boolean(code),
+    type,
+    origin,
+    userAgent: userAgent.slice(0, 120),
+  });
 
   // Only relative paths, so a crafted link cannot bounce users off-site.
   const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
 
   if (!code) {
+    console.log("auth/callback: no code param");
     return NextResponse.redirect(`${origin}/login?error=missing_code`);
   }
 
@@ -32,6 +45,8 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.redirect(`${origin}/login?error=invalid_link`);
   }
+
+  console.log("auth/callback: exchange succeeded, redirecting to", safeNext ?? "/dashboard");
 
   if (type === "recovery") {
     return NextResponse.redirect(`${origin}/reset-password`);
