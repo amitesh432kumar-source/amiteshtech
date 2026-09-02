@@ -32,7 +32,7 @@ export function UpiPanel({
   currency: string;
   upi: { upiId: string; merchantName: string; qrUrl: string | null; instructions: string | null };
   payer: { name: string; email: string };
-  onSubmitted: () => void;
+  onSubmitted: (orderId: string) => void;
   onError: (message: string | null) => void;
 }) {
   const payUri = buildUpiUri({
@@ -125,7 +125,7 @@ export function UpiPanel({
       return;
     }
 
-    onSubmitted();
+    onSubmitted(result.orderId as string);
   }
 
   return (

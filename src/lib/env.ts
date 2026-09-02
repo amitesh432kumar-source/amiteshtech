@@ -54,3 +54,8 @@ export function paypalConfig(): PaypalConfig | null {
     apiBase: live ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com",
   };
 }
+
+/** Set once, when the webhook subscription is created against this site's URL. */
+export function paypalWebhookId(): string | null {
+  return process.env.PAYPAL_WEBHOOK_ID || null;
+}

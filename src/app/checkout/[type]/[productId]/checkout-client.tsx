@@ -3,15 +3,22 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PayPalButtons, PayPalScriptProvider } from "@paypal/react-paypal-js";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
 
 import { UpiPanel } from "@/app/checkout/[type]/[productId]/upi-panel";
 import { Card, ErrorState } from "@/components/ui/card";
-import { ButtonLink } from "@/components/ui/button";
-import { cn, formatPrice } from "@/lib/utils";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { cn, formatDateTime, formatPrice } from "@/lib/utils";
 import type { ProductType } from "@/lib/supabase/types";
 
 type Method = "paypal" | "upi";
+type Screen =
+  | { kind: "checkout" }
+  | { kind: "processing" }
+  | { kind: "paid"; orderId: string; paidAt: string }
+  | { kind: "pending"; orderId: string; submittedAt: string }
+  | { kind: "failed" }
+  | { kind: "cancelled" };
 
 export function CheckoutClient({
   productType,
@@ -22,6 +29,7 @@ export function CheckoutClient({
   paypal,
   upi,
   payer,
+  pendingOrder,
   successHref,
 }: {
   productType: ProductType;
@@ -38,34 +46,102 @@ export function CheckoutClient({
     instructions: string | null;
   };
   payer: { name: string; email: string };
+  pendingOrder: { id: string; createdAt: string } | null;
   successHref: string;
 }) {
   const router = useRouter();
   const [method, setMethod] = useState<Method>(paypal.available ? "paypal" : "upi");
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<"paid" | "submitted" | null>(null);
+  const [screen, setScreen] = useState<Screen>(
+    pendingOrder ? { kind: "pending", orderId: pendingOrder.id, submittedAt: pendingOrder.createdAt } : { kind: "checkout" },
+  );
 
-  if (done === "paid") {
+  const actionLabel = productType === "course" ? "Start Course" : "View Webinar Details";
+
+  if (screen.kind === "processing") {
     return (
-      <Card className="space-y-3 text-center">
-        <CheckCircle2 className="mx-auto size-8 text-success" aria-hidden />
-        <h2 className="text-xl font-semibold">Payment confirmed</h2>
-        <p className="text-sm text-muted">Your access has been unlocked. Enjoy the course.</p>
-        <ButtonLink href={successHref}>Go to my dashboard</ButtonLink>
+      <Card className="space-y-3 py-10 text-center">
+        <Loader2 className="mx-auto size-8 animate-spin text-brand" aria-hidden />
+        <h2 className="text-xl font-semibold">Payment Processing</h2>
+        <p className="text-sm text-muted">
+          Your payment is being processed. Please don&apos;t close or refresh this page.
+        </p>
       </Card>
     );
   }
 
-  if (done === "submitted") {
+  if (screen.kind === "paid") {
+    return (
+      <Card className="space-y-4 text-center">
+        <CheckCircle2 className="mx-auto size-10 text-success" aria-hidden />
+        <div>
+          <h2 className="text-xl font-semibold">Payment Successful 🎉</h2>
+          <p className="mt-1 text-sm text-muted">Your enrollment has been confirmed.</p>
+        </div>
+        <dl className="mx-auto grid max-w-xs grid-cols-2 gap-y-2 border-t border-border pt-4 text-left text-sm">
+          <dt className="text-muted">Product</dt>
+          <dd className="text-right font-medium">{productTitle}</dd>
+          <dt className="text-muted">Amount</dt>
+          <dd className="text-right font-medium">{formatPrice(amount, currency)}</dd>
+          <dt className="text-muted">Order ID</dt>
+          <dd className="truncate text-right font-mono text-xs">{screen.orderId}</dd>
+          <dt className="text-muted">Status</dt>
+          <dd className="text-right font-medium text-success">Paid</dd>
+          <dt className="text-muted">Date</dt>
+          <dd className="text-right font-medium">{formatDateTime(screen.paidAt)}</dd>
+        </dl>
+        <ButtonLink href={successHref} className="w-full">
+          {actionLabel}
+        </ButtonLink>
+      </Card>
+    );
+  }
+
+  if (screen.kind === "pending") {
+    return (
+      <Card className="space-y-4 text-center">
+        <Clock className="mx-auto size-10 text-warning" aria-hidden />
+        <div>
+          <h2 className="text-xl font-semibold">Payment Verification in Progress</h2>
+          <p className="mt-1 text-sm text-muted">
+            We&apos;re checking your payment status. Your access will appear automatically once the
+            payment is confirmed — usually within one working day.
+          </p>
+        </div>
+        <dl className="mx-auto grid max-w-xs grid-cols-2 gap-y-2 border-t border-border pt-4 text-left text-sm">
+          <dt className="text-muted">Order ID</dt>
+          <dd className="truncate text-right font-mono text-xs">{screen.orderId}</dd>
+          <dt className="text-muted">Submitted</dt>
+          <dd className="text-right font-medium">{formatDateTime(screen.submittedAt)}</dd>
+        </dl>
+        <ButtonLink href="/dashboard/orders" variant="outline" className="w-full">
+          View my orders
+        </ButtonLink>
+      </Card>
+    );
+  }
+
+  if (screen.kind === "failed") {
     return (
       <Card className="space-y-3 text-center">
-        <h2 className="text-xl font-semibold">Payment reference received</h2>
-        <p className="text-sm text-muted">
-          Your order is marked <strong>pending verification</strong>. We&apos;ll check the payment
-          and unlock your access — usually within one working day. You can follow its status under
-          Orders.
-        </p>
-        <ButtonLink href="/dashboard/orders">View my orders</ButtonLink>
+        <XCircle className="mx-auto size-10 text-danger" aria-hidden />
+        <h2 className="text-xl font-semibold">Payment Failed</h2>
+        <p className="text-sm text-muted">Your payment could not be completed. Please try again.</p>
+        <Button className="w-full" onClick={() => setScreen({ kind: "checkout" })}>
+          Try Again
+        </Button>
+      </Card>
+    );
+  }
+
+  if (screen.kind === "cancelled") {
+    return (
+      <Card className="space-y-3 text-center">
+        <h2 className="text-xl font-semibold">Payment Cancelled</h2>
+        <p className="text-sm text-muted">Your payment was cancelled. No access has been granted.</p>
+        <Button className="w-full" onClick={() => setScreen({ kind: "checkout" })}>
+          Return to {productType === "course" ? "Course" : "Webinar"}
+        </Button>
       </Card>
     );
   }
@@ -132,6 +208,7 @@ export function CheckoutClient({
                 return data.paypalOrderId as string;
               }}
               onApprove={async (data) => {
+                setScreen({ kind: "processing" });
                 const orderId = sessionStorage.getItem("amitesh-order-id");
                 const response = await fetch("/api/paypal/capture", {
                   method: "POST",
@@ -142,15 +219,19 @@ export function CheckoutClient({
 
                 if (!response.ok) {
                   setError(result.error ?? "We couldn't verify that payment.");
+                  setScreen({ kind: "failed" });
                   return;
                 }
 
                 sessionStorage.removeItem("amitesh-order-id");
-                setDone("paid");
+                setScreen({ kind: "paid", orderId: orderId ?? "", paidAt: new Date().toISOString() });
                 router.refresh();
               }}
+              onCancel={() => {
+                setScreen({ kind: "cancelled" });
+              }}
               onError={() => {
-                setError("PayPal couldn't complete the payment. Please try again.");
+                setScreen({ kind: "failed" });
               }}
             />
           </PayPalScriptProvider>
@@ -166,7 +247,9 @@ export function CheckoutClient({
           currency={currency}
           upi={upi}
           payer={payer}
-          onSubmitted={() => setDone("submitted")}
+          onSubmitted={(orderId) =>
+            setScreen({ kind: "pending", orderId, submittedAt: new Date().toISOString() })
+          }
           onError={setError}
         />
       )}

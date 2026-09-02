@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { CheckoutClient } from "@/app/checkout/[type]/[productId]/checkout-client";
 import { SiteNav } from "@/components/site-nav";
 import { Card } from "@/components/ui/card";
 import { ButtonLink } from "@/components/ui/button";
 import { getProfile, requireUser } from "@/lib/auth";
-import { alreadyOwns, buildCheckout } from "@/lib/checkout";
+import { alreadyOwns, buildCheckout, getLatestOrder } from "@/lib/checkout";
 import { isPayPalConfigured } from "@/lib/paypal";
 import { getSiteSettings, settingString } from "@/lib/settings";
 import { formatPrice } from "@/lib/utils";
@@ -26,20 +26,36 @@ export default async function CheckoutPage({
   const productType = type as ProductType;
 
   const user = await requireUser(`/checkout/${type}/${productId}`);
-  const [profile, settings, checkout] = await Promise.all([
+  const [profile, settings, checkout, owns, latestOrder] = await Promise.all([
     getProfile(),
     getSiteSettings(),
     buildCheckout(productType, productId),
+    alreadyOwns(user.id, productType, productId),
+    getLatestOrder(user.id, productType, productId),
   ]);
 
   if (checkout === "product_unavailable") notFound();
 
-  if (await alreadyOwns(user.id, productType, productId)) {
-    redirect(productType === "course" ? "/dashboard/courses" : "/dashboard/webinars");
-  }
-
   const siteName = settingString(settings, "site.name", "Amitesh Tech");
   const logoUrl = settingString(settings, "site.logo_url") || null;
+
+  if (owns) {
+    const isCourse = productType === "course";
+    return (
+      <Shell siteName={siteName} logoUrl={logoUrl} isAdmin={profile?.role === "admin"}>
+        <Card className="mx-auto max-w-lg space-y-3 text-center">
+          <h1 className="text-xl font-semibold">
+            {isCourse
+              ? "You already have access to this course."
+              : "You are already registered for this webinar."}
+          </h1>
+          <ButtonLink href={isCourse ? "/dashboard/courses" : "/dashboard/webinars"}>
+            {isCourse ? "Start Course" : "View Webinar"}
+          </ButtonLink>
+        </Card>
+      </Shell>
+    );
+  }
 
   if (checkout === "sold_out") {
     return (
@@ -64,6 +80,13 @@ export default async function CheckoutPage({
   const upiInstructions = settingString(settings, "payment.upi_instructions");
   const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? null;
 
+  // Resumed on refresh/return so an in-flight or already-submitted payment
+  // is never silently forgotten and reset to a blank checkout form.
+  const pendingOrder =
+    latestOrder && latestOrder.payment_status === "pending_verification"
+      ? { id: latestOrder.id, createdAt: latestOrder.created_at }
+      : null;
+
   return (
     <Shell siteName={siteName} logoUrl={logoUrl} isAdmin={profile?.role === "admin"}>
       <div className="mx-auto grid max-w-5xl gap-8 lg:grid-cols-[1fr_380px]">
@@ -85,6 +108,7 @@ export default async function CheckoutPage({
               qrUrl: upiQrUrl || null,
               instructions: upiInstructions || null,
             }}
+            pendingOrder={pendingOrder}
             payer={{
               name: profile?.full_name ?? "",
               email: profile?.email ?? "",

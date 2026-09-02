@@ -34,6 +34,27 @@ export async function buildCheckout(
   return { product, pricing: applyCoupon(product.price, product.currency, coupon) };
 }
 
+/**
+ * The student's most recent order for this product, if any — used to resume
+ * the correct checkout screen after a refresh or a return visit instead of
+ * losing track of a payment that's still pending or was already captured.
+ */
+export async function getLatestOrder(userId: string, type: ProductType, productId: string) {
+  const supabase = await createClient();
+  const column = type === "course" ? "course_id" : "webinar_id";
+
+  const { data } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("user_id", userId)
+    .eq(column, productId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return (data as Order) ?? null;
+}
+
 export async function alreadyOwns(userId: string, type: ProductType, productId: string) {
   const supabase = await createClient();
 

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { jsonError, requireApiUser, serverError } from "@/lib/api";
-import { PayPalNotConfigured, capturePayPalOrder, captureDetails } from "@/lib/paypal";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { PayPalNotConfigured, capturePayPalOrder } from "@/lib/paypal";
+import { verifyAndFulfilPaypalOrder } from "@/lib/paypal-fulfil";
+import { createClient } from "@/lib/supabase/server";
 import type { Order } from "@/lib/supabase/types";
 
 const schema = z.object({
@@ -50,75 +51,24 @@ export async function POST(request: Request) {
 
   try {
     const captured = await capturePayPalOrder(paypalOrderId);
-    const details = captureDetails(captured);
-    const admin = createAdminClient();
+    // Also reachable from the webhook, which may fulfil the same order first —
+    // whichever arrives first wins, the other is a safe no-op.
+    const result = await verifyAndFulfilPaypalOrder(order.id, paypalOrderId, captured);
 
-    const completed = captured.status === "COMPLETED";
-    const referenceMatches = details.referenceId === order.id;
-
-    // orders.amount was written by create_order in the database and students
-    // have no UPDATE policy on orders, so it is the authoritative expected price.
-    const expected = Number(order.amount);
-
-    const paidAmount = details.amount === null ? NaN : Number(details.amount);
-    const amountMatches =
-      Number.isFinite(paidAmount) && Math.abs(paidAmount - expected) < 0.01;
-    const currencyMatches = details.currency === order.currency;
-
-    if (!completed || !referenceMatches || !amountMatches || !currencyMatches) {
-      await admin
-        .from("payments")
-        .update({ status: "failed" })
-        .eq("order_id", order.id)
-        .eq("paypal_order_id", paypalOrderId);
-
-      await admin
-        .from("orders")
-        .update({ payment_status: "failed", order_status: "cancelled" })
-        .eq("id", order.id);
-
-      console.error("paypal capture rejected", {
-        orderId: order.id,
-        status: captured.status,
-        completed,
-        referenceMatches,
-        amountMatches,
-        currencyMatches,
-      });
-
+    if (!result.ok) {
+      if (result.reason === "fulfilment_error") {
+        return jsonError(
+          "Your payment went through but we hit a problem unlocking access. Our team has been alerted — please contact us with your order ID.",
+          500,
+        );
+      }
       return jsonError(
         "We couldn't verify that payment. If money left your account, contact us with your order ID.",
         409,
       );
     }
 
-    await admin
-      .from("payments")
-      .update({
-        status: "paid",
-        paypal_transaction_id: details.transactionId,
-        amount: paidAmount,
-        verified_at: new Date().toISOString(),
-      })
-      .eq("order_id", order.id)
-      .eq("paypal_order_id", paypalOrderId);
-
-    const { error: fulfilError } = await admin.rpc("fulfil_order", { p_order_id: order.id });
-
-    if (fulfilError) {
-      // The money is captured, so the order stays paid and this is escalated
-      // rather than silently swallowed.
-      console.error("fulfil_order failed after successful capture", {
-        orderId: order.id,
-        error: fulfilError,
-      });
-      return jsonError(
-        "Your payment went through but we hit a problem unlocking access. Our team has been alerted — please contact us with your order ID.",
-        500,
-      );
-    }
-
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, alreadyPaid: result.alreadyPaid ?? false });
   } catch (cause) {
     if (cause instanceof PayPalNotConfigured) {
       return jsonError("PayPal isn't configured on this site yet.", 503);

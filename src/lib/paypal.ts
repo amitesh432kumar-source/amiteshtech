@@ -41,6 +41,31 @@ export function isPayPalConfigured() {
   return paypalConfig() !== null;
 }
 
+/** One-time setup: registers this site's webhook endpoint with PayPal. */
+export async function createPayPalWebhookSubscription(url: string, eventTypes: string[]) {
+  const config = paypalConfig();
+  if (!config) throw new PayPalNotConfigured();
+
+  const response = await fetch(`${config.apiBase}/v1/notifications/webhooks`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${await accessToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url,
+      event_types: eventTypes.map((name) => ({ name })),
+    }),
+    cache: "no-store",
+  });
+
+  const data = (await response.json()) as { id?: string; name?: string; message?: string };
+  if (!response.ok) {
+    throw new Error(`PayPal webhook registration failed: ${data.name ?? response.status} — ${data.message ?? ""}`);
+  }
+  return data.id as string;
+}
+
 export type PayPalOrder = {
   id: string;
   status: string;
@@ -135,6 +160,47 @@ export async function getPayPalOrder(paypalOrderId: string): Promise<PayPalOrder
   }
 
   return (await response.json()) as PayPalOrder;
+}
+
+/**
+ * Confirms a webhook body actually came from PayPal before anything in it is
+ * trusted — otherwise anyone could POST a fake "payment completed" event.
+ */
+export async function verifyWebhookSignature(input: {
+  webhookId: string;
+  headers: {
+    transmissionId: string;
+    transmissionTime: string;
+    certUrl: string;
+    authAlgo: string;
+    transmissionSig: string;
+  };
+  body: unknown;
+}): Promise<boolean> {
+  const config = paypalConfig();
+  if (!config) throw new PayPalNotConfigured();
+
+  const response = await fetch(`${config.apiBase}/v1/notifications/verify-webhook-signature`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${await accessToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      transmission_id: input.headers.transmissionId,
+      transmission_time: input.headers.transmissionTime,
+      cert_url: input.headers.certUrl,
+      auth_algo: input.headers.authAlgo,
+      transmission_sig: input.headers.transmissionSig,
+      webhook_id: input.webhookId,
+      webhook_event: input.body,
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) return false;
+  const data = (await response.json()) as { verification_status?: string };
+  return data.verification_status === "SUCCESS";
 }
 
 export function captureDetails(order: PayPalOrder) {
